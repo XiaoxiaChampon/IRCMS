@@ -1,0 +1,404 @@
+---
+title: "Willow_data"
+author: "Xiaoxia Champon"
+date: "2023-09-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1-4, 5-37, 39-70,  72-
+```{r}
+library("readxl")
+willow_data_Q1 <- read_excel("/Users/xzhao17/Desktop/Willow/Q1.xlsx")
+```
+
+
+```{r}
+dim(willow_data_Q1)
+```
+
+```{r}
+apply(willow_data_Q1, 1, function(x) sum(is.na(x)))
+```
+
+```{r}
+round(apply(willow_data_Q1, 1, function(x) sum(is.na(x)))/91,2)
+```
+
+```{r}
+#first 4 columns
+student_information=willow_data_Q1[,c("Student","school","teacher","GENDER")]
+```
+
+```{r}
+table(student_information$school)
+```
+```{r}
+table(student_information$teacher)
+```
+
+```{r}
+table(student_information$GENDER)
+```
+
+
+```{r}
+#9, 21, 27 missing, 29 weeks in total
+
+week_time = c(1:8,10:20,22:28,30:32)
+num_weeks=length(week_time)
+RQ1_scores=willow_data_Q1[,(dim(student_information)[2]+1):(dim(student_information)[2]+num_weeks)]
+```
+
+
+```{r}
+RQ1_scores[1:5,1:10]
+```
+
+
+```{r}
+RQ1_scores[1,c(1,29)]
+```
+
+
+```{r}
+nub_subjects = dim(RQ1_scores)[1]
+```
+
+```{r}
+colnames(RQ1_scores)
+```
+```{r}
+RQ1_scores[1:5,1:5]
+```
+```{r}
+RQ1_cal=willow_data_Q1[,(dim(student_information)[2]+num_weeks+1):(dim(student_information)[2]+num_weeks+num_weeks)]
+```
+
+```{r}
+RQ1_cal[1,c(1,29)]
+```
+
+
+
+```{r}
+RQ1_bias=willow_data_Q1[,(dim(student_information)[2]+2*num_weeks+1):dim(willow_data_Q1)[2]]
+```
+
+```{r}
+RQ1_bias[1,c(1,29)]
+```
+```{r}
+range(na.omit(RQ1_scores))
+range(na.omit(RQ1_cal))
+range(na.omit(RQ1_bias))
+
+```
+
+```{r}
+logit_fn=function(x){log(x/(1-x))}
+bias_fn=function(x)(x/(1-x^2))
+RQ1_scores_log=logit_fn(RQ1_scores)
+RQ1_cal_log=logit_fn(RQ1_cal)
+RQ1_bias_after=bias_fn(RQ1_bias)
+```
+
+
+
+
+```{r}
+RQ1_scores_log[RQ1_scores_log==-Inf]=log(0.00001/(1-0.00001))
+RQ1_scores_log[RQ1_scores_log==Inf]=log(0.99999/(1-0.99999))
+
+```
+
+
+```{r}
+RQ1_cal_log[RQ1_cal_log==-Inf]=log(0.00001/(1-0.00001))
+RQ1_cal_log[RQ1_cal_log==Inf]=log(0.99999/(1-0.99999))
+```
+
+
+```{r}
+RQ1_bias_after[RQ1_bias_after==Inf]=bias_fn(0.99)
+RQ1_bias_after[RQ1_bias_after==-Inf]=bias_fn(-0.99)
+```
+
+
+
+
+
+```{r}
+extract_scores_UNIVFPCA_3 <- function (mZ1,mZ2,mZ3, tt=tt , PVE=0.95,num_knots = 10){
+  # tt=week_time
+  
+    
+  m<- nrow(mZ1)
+  n<-ncol(mZ1)
+  out1 <- fpca.face(Y=t(mZ1), argvals =tt, pve = 0.99,knots = num_knots)
+  out2 <- fpca.face(Y=t(mZ2), argvals =tt, pve = 0.99,knots = num_knots)
+  out3 <- fpca.face(Y=t(mZ3), argvals =tt, pve = 0.99,knots = num_knots)
+  O_m1 <- matrix(0, nrow=m, ncol=out1$npc)
+  O_m2  <- matrix(0, nrow=m, ncol=out2$npc)
+  O_m3  <- matrix(0, nrow=m, ncol=out3$npc)
+  
+  #construct PHI
+  Phi_est0 <-  rbind(
+                     cbind(out1$efunctions*sqrt(m),O_m2 ,O_m3), 
+                     cbind(O_m1,out2$efunctions*sqrt(m),O_m3),
+                     cbind(O_m1,O_m2,out3$efunctions*sqrt(m)))
+  Scores0 <- cbind(out1$scores, out2$scores,out3$scores)  
+  ScoresCov_0 <- cov(Scores0 ) 
+  oute <- eigen(ScoresCov_0)
+  
+  K<- which(cumsum( oute$values)/sum(oute$values)>=PVE)[1]
+  count_iter = 0
+  delta=0.01
+  while (K<2 && count_iter<100) {
+    count_iter = count_iter + 1
+    print(cat("count_iter: ", count_iter))
+    K<- which(cumsum( oute$values)/sum(oute$values)>=(PVE+delta))[1]
+    delta=delta+0.01
+  }
+  
+  Phi_est <-  Phi_est0%*% oute$vectors[,1:K] # correct eigenfns
+  
+  mZ <- rbind(mZ1, mZ2,mZ3) 
+  Scores_est <- t(mZ) %*%Phi_est/sqrt(m)  # they are not demeaned
+  
+  return (list(scores=Scores_est, Phi= Phi_est))
+}
+
+
+```
+
+
+```{r}
+RQ1_scores_log[is.na(RQ1_scores_log)]=0
+RQ1_cal_log[is.na(RQ1_cal_log)]=0
+RQ1_bias_after[is.na(RQ1_bias_after)]=0
+```
+
+
+
+```{r}
+mZ1=t(as.matrix(RQ1_scores_log))
+mZ2=t(as.matrix(RQ1_cal_log))
+mZ3=t(as.matrix(RQ1_bias_after))
+mfpca_results = extract_scores_UNIVFPCA_3(mZ1,mZ2,mZ3, tt=week_time , PVE=0.95)
+```
+
+
+```{r}
+mfpca_scores=mfpca_results$scores
+```
+
+
+```{r}
+#**** clustering the scores using KMEANS 
+#INPUT
+# n by K scores - or features extracted from the multivariate FD
+#OUTPUT
+# list with 2 elements: nclust (number of clusters), label (vector with cluster membership)
+#
+library(NbClust)
+kmeans_cluster <- function(data=scores_K){
+  out_kmeans = NbClust::NbClust(data = data, diss = NULL,
+                                distance = "euclidean", min.nc = 2, max.nc = 5,
+                                method = "kmeans",index="silhouette")
+  
+  return(list(nclust=as.numeric(out_kmeans$Best.nc[1]), label = out_kmeans$Best.partition))
+}
+```
+
+
+```{r}
+
+
+library(ggplot2)
+kmeans_plot_fn = function(clustering_data,label_factor,color_facotor){
+   kmeans_plot= ggplot(clustering_data,aes(x=Score1, y= Score2, label = label_factor,
+                               color=as.factor(color_facotor) ))+
+              geom_point(size =4)+
+              theme(text = element_text(size = 20))  +
+              guides(color=guide_legend(title=label_factor))+
+              theme(legend.position = c(0.1, 0.8))+
+              geom_text(aes(color=factor(label_factor)),vjust = -0.5, size = 4)
+print(kmeans_plot)
+}
+ 
+```
+
+
+
+```{r}
+kmeans_result =kmeans_cluster(mfpca_scores)$label
+
+
+clustering_data = data.frame(mfpca_scores[,1:2] , kmeans_result,student_information$GENDER,student_information$teacher,student_information$school)
+colnames(clustering_data) = c("Score1","Score2","Cluster","Gender","Teacher","School")
+ 
+```
+
+```{r}
+table(kmeans_result)
+```
+
+
+
+```{r}
+ggplot(clustering_data,aes(x=Score1, y= Score2, label = Gender,
+                               color=as.factor(Cluster) ))+
+              geom_point(size =4)+
+              theme(text = element_text(size = 20))  +
+              guides(color=guide_legend(title="Cluster"))+
+              theme(legend.position = c(0.1, 0.8))+
+              geom_text(aes(color=factor(Cluster)),vjust = -0.5, size = 4)
+```
+
+```{r}
+ggplot(clustering_data,aes(x=Score1, y= Score2, label = School,
+                               color=as.factor(Cluster) ))+
+              geom_point(size =4)+
+              theme(text = element_text(size = 20))  +
+              guides(color=guide_legend(title="Cluster"))+
+              theme(legend.position = c(0.1, 0.8))+
+              geom_text(aes(color=factor(Cluster)),vjust = -0.5, size = 4)
+```
+```{r}
+ggplot(clustering_data,aes(x=Score1, y= Score2, label = Teacher,
+                               color=as.factor(Cluster) ))+
+              geom_point(size =4)+
+              theme(text = element_text(size = 20))  +
+              guides(color=guide_legend(title="Cluster"))+
+              theme(legend.position = c(0.1, 0.8))+
+              geom_text(aes(color=factor(Cluster)),vjust = -0.5, size = 4)
+```
+
+
+
+```{r}
+ggplot(clustering_data,                                      # Grouped barplot using ggplot2
+       aes(x = as.factor(School),
+           fill = as.factor(Cluster))) +
+    guides(fill=guide_legend(title="Cluster"))+
+    xlab("School")+
+    geom_bar(
+           position = "fill")+theme(text = element_text(size = 20)) 
+```
+```{r}
+ggplot(clustering_data,                                      # Grouped barplot using ggplot2
+       aes(x = as.factor(Teacher),
+           fill = as.factor(Cluster))) +
+    guides(fill=guide_legend(title="Cluster"))+
+    xlab("Teacher")+
+    geom_bar(
+           position = "dodge")+theme(text = element_text(size = 20)) 
+```
+```{r}
+ggplot(clustering_data,                                      # Grouped barplot using ggplot2
+       aes(x = as.factor(Gender),
+           
+           fill = as.factor(Cluster))) +
+    guides(fill=guide_legend(title="Cluster"))+
+    xlab("Gender")+
+    geom_bar(
+           position = "stack")+theme(text = element_text(size = 20)) 
+```
+
+```{r}
+mZ1_cluster=cbind(t(mZ1),kmeans_result)
+mZ2_cluster=cbind(t(mZ2),kmeans_result)
+mZ3_cluster=cbind(t(mZ3),kmeans_result)
+```
+
+
+
+```{r}
+cluster_column=dim(mZ1_cluster)[2]
+```
+
+
+```{r}
+#plot first true latent curves Z_1 by clusters
+par(mfrow=c(1,3))
+matplot(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",xlab="Time",ylab="value",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-5.5,10))
+matlines(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=3, lwd=3)
+matlines(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=5, lwd=3)
+
+#plot second true latent curves Z_2. by clusters
+matplot(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",xlab="Time",ylab="value",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-5.5,10))
+matlines(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=3, lwd=3)
+matlines(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=5, lwd=3)
+
+#plot second true latent curves Z_3. by clusters
+matplot(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",xlab="Time",ylab="value",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-5.5,10))
+matlines(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=3, lwd=3)
+matlines(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=5, lwd=3)
+```
+
+#separate them
+```{r}
+par(mfrow=c(3,3))
+#cluster 1
+matplot(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",ylab="Value",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),main="Transformed Scores",cex.main=2,xlab="")
+matlines(week_time,apply(t(mZ1_cluster[mZ1_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),xlab="",col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),main="Transformed Calibration",cex.main=2,ylab="",xlab="")
+matlines(week_time,apply(t(mZ2_cluster[mZ2_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),xlab="",col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),main="Transformed Bias",cex.main=2,ylab="",xlab="")
+matlines(week_time,apply(t(mZ3_cluster[mZ3_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),col="black",xlab="",lty=1, lwd=4)
+#cluster 2
+matplot(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2,ylab="Value")
+matlines(week_time,apply(t(mZ1_cluster[mZ1_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2)
+matlines(week_time,apply(t(mZ2_cluster[mZ2_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2)
+matlines(week_time,apply(t(mZ3_cluster[mZ3_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+
+#cluster 3
+matplot(week_time,t(mZ1_cluster[mZ1_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2,xlab="Week",ylab="Value")
+matlines(week_time,apply(t(mZ1_cluster[mZ1_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ2_cluster[mZ2_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2,xlab="Week")
+matlines(week_time,apply(t(mZ2_cluster[mZ2_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ3_cluster[mZ3_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-10,12),cex.main=2,xlab="Week")
+matlines(week_time,apply(t(mZ3_cluster[mZ3_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+
+```
+
+
+```{r}
+mZ11_cluster=cbind(as.matrix(RQ1_scores),kmeans_result)
+mZ22_cluster=cbind(as.matrix(RQ1_cal),kmeans_result)
+mZ33_cluster=cbind(as.matrix(RQ1_bias),kmeans_result)
+```
+
+
+```{r}
+par(mfrow=c(3,3))
+#cluster 1
+matplot(week_time,t(mZ11_cluster[mZ11_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",ylab="Value",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),main="Scores",cex.main=2,xlab="")
+matlines(week_time,apply(t(mZ11_cluster[mZ11_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),xlab="",col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ22_cluster[mZ22_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),main="Calibration",cex.main=2,ylab="",xlab="")
+matlines(week_time,apply(t(mZ22_cluster[mZ22_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),xlab="",col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ33_cluster[mZ33_cluster[,cluster_column]==1,1:num_weeks]),col="red",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),main="Bias",cex.main=2,ylab="",xlab="")
+matlines(week_time,apply(t(mZ33_cluster[mZ33_cluster[,cluster_column]==1,1:num_weeks]),1,mean,na.rm=TRUE),col="black",xlab="",lty=1, lwd=4)
+#cluster 2
+matplot(week_time,t(mZ11_cluster[mZ11_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2,ylab="Value")
+matlines(week_time,apply(t(mZ11_cluster[mZ11_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4,ylab="")
+matplot(week_time,t(mZ22_cluster[mZ22_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2)
+matlines(week_time,apply(t(mZ22_cluster[mZ22_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ33_cluster[mZ33_cluster[,cluster_column]==2,1:num_weeks]),col="green",type = "l",xlab="",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2)
+matlines(week_time,apply(t(mZ33_cluster[mZ33_cluster[,cluster_column]==2,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+
+#cluster 3
+matplot(week_time,t(mZ11_cluster[mZ11_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2,xlab="Week",ylab="Value")
+matlines(week_time,apply(t(mZ11_cluster[mZ11_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ22_cluster[mZ22_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2,xlab="Week")
+matlines(week_time,apply(t(mZ22_cluster[mZ22_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+matplot(week_time,t(mZ33_cluster[mZ33_cluster[,cluster_column]==3,1:num_weeks]),col="blue",type = "l",ylab="",cex.lab=1.5, cex.axis=2,lty=1, lwd=3,ylim=c(-1,1.2),cex.main=2,xlab="Week")
+matlines(week_time,apply(t(mZ33_cluster[mZ33_cluster[,cluster_column]==3,1:num_weeks]),1,mean,na.rm=TRUE),col="black",lty=1, lwd=4)
+```
+
