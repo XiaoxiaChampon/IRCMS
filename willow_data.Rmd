@@ -33,6 +33,19 @@ round(apply(willow_data_Q1, 1, function(x) sum(is.na(x)))/91,2)
 student_information=willow_data_Q1[,c("Student","school","teacher","GENDER")]
 ```
 
+
+```{r}
+library(ggplot2)
+ggplot(student_information,                                      # Grouped barplot using ggplot2
+       aes(x = as.factor(school),
+           fill = as.factor(teacher))) +
+    guides(fill=guide_legend(title="Teacher"))+
+    xlab("School")+
+    geom_bar(position = "stack")+theme(text = element_text(size = 20)) 
+```
+
+
+
 ```{r}
 table(student_information$school)
 ```
